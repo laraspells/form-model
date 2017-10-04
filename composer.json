@@ -1,0 +1,26 @@
+{
+    "name": "laraspells/form-model",
+    "description": "Laravel library to render and handle common form create/update based on given model.",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Muhammad Syifa",
+            "email": "emsifa@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "LaraSpells\\FormModel\\": "src/"
+        }
+    },
+    "require": {
+        "laraspells/asset-collector": "dev-master"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LaraSpells\\FormModel\\ServiceProvider"
+            ]
+        }
+    }
+}
