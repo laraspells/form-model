@@ -28,7 +28,6 @@ class FormModel
     protected $view = '';
     protected $viewData = [];
     protected $fields = [];
-    protected $rules = [];
     protected $rulesCreate = [];
     protected $rulesUpdate = [];
     protected $scripts = [];
@@ -94,7 +93,6 @@ class FormModel
 
         $this->rulesCreate = $rulesCreate;
         $this->rulesUpdate = $rulesUpdate;
-        $this->rules = array_merge($this->rules, $this->isCreate() ? $rulesCreate : $rulesUpdate);
 
         return $this;
     }
@@ -110,7 +108,7 @@ class FormModel
         $this->validateRelationKey($relationKey);
         $this->childs[$relationKey] = [
             'label' => $label,
-            'fields' => $this->validateAndResolveFields($fields, $relationKey.'.*.'),
+            'fields' => $this->validateAndResolveFields($fields),
             'items' => $this->isCreate() ? [] : $this->getModel()->{$relationKey}()->get()
         ];
         return $this;
@@ -232,6 +230,38 @@ class FormModel
     public function getRulesUpdate()
     {
         return $this->rulesUpdate;
+    }
+
+    public function getRules()
+    {
+        $rules = $this->isCreate() ? $this->getRulesCreate() : $this->getRulesUpdate();
+
+        // Merge with (exists) fields rules
+        foreach ($this->getExistsFields() as $key => $field) {
+            $rules[$key] = isset($rules[$key]) ?
+                array_unique(array_merge($this->resolveRules($rules[$key]), $field['rules']))
+                : $field['rules'];
+        }
+
+        // Merge with (exists) child forms rules
+        foreach ($this->getChilds() as $relationKey => $child) {
+            foreach ($child['fields'] as $key => $field) {
+                $ruleKey = "{$relationKey}.*.{$key}";
+
+                if (!$field['exists']) {
+                    if (isset($rules[$ruleKey])) unset($rules[$ruleKey]);
+                    continue;
+                }
+
+                $rules[$ruleKey] = isset($rules[$ruleKey]) ?
+                    array_unique(array_merge($this->resolveRules($rules[$ruleKey]), $field['rules']))
+                    : $field['rules'];
+            }
+        }
+
+        return array_filter($rules, function($rule) {
+            return !empty($rule);
+        });
     }
 
     public function getChilds()
@@ -426,7 +456,8 @@ class FormModel
     protected function validateForm()
     {
         $request = $this->getRequest();
-        $rules = $this->isUpdate() ? $this->getRulesUpdate() : $this->getRulesCreate();
+        $rules = $this->getRules();
+        dd($rules);
         $request->validate($rules);
     }
 
@@ -640,29 +671,29 @@ class FormModel
         );
     }
 
-    protected function validateAndResolveFields(array $fields, $keyPrefix = null)
+    protected function validateAndResolveFields(array $fields)
     {
         foreach ($fields as $key => $field) {
-            $fields[$key] = $this->validateAndResolveField($key, $field, $keyPrefix);
+            $fields[$key] = $this->validateAndResolveField($key, $field);
         }
         return $fields;
     }
 
-    protected function validateAndResolveField($key, array $field, $keyPrefix = null)
+    protected function validateAndResolveField($key, array $field)
     {
-        $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
+        $field['name'] = $key;
 
         $field = array_merge([
             'exists' => true,
             'disabled' => false,
+            'rules' => []
         ], $field);
 
-        $field['name'] = $key;
+        $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
         $rules = isset($field[$rulesKey]) ? $field[$rulesKey]
             : (isset($field['rules']) ? $field['rules'] : []);
 
         $rules = $this->resolveRules($rules);
-        $this->mergeRules($keyPrefix.$key, $rules);
         $field['rules'] = $rules;
         if (in_array('required', $rules)) {
             $field['required'] = true;
@@ -688,15 +719,6 @@ class FormModel
         }
 
         return $field;
-    }
-
-    protected function mergeRules($key, $rules)
-    {
-        if (isset($this->rules[$key])) {
-            $this->rules[$key] = array_unique(array_merge($this->rules[$key], $rules));
-        } else {
-            $this->rules[$key] = $rules;
-        }
     }
 
     protected function isUploadableField($field)
