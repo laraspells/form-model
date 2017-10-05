@@ -37,8 +37,8 @@ class FormModel
 
     protected $childs = [];
 
-    protected $formDataResolver; 
-    protected $requestDataResolver; 
+    protected $formDataResolver;
+    protected $requestDataResolver;
     protected $beforeSave;
     protected $beforeSaveChild;
 
@@ -174,7 +174,7 @@ class FormModel
         if ($view) $this->withView($view);
         $view = $this->getView();
         $data = $this->resolveViewData($otherData);
-        return view($view, $data)->render();   
+        return view($view, $data)->render();
     }
 
     public function submit(Request $request)
@@ -373,8 +373,8 @@ class FormModel
         foreach ($values as $i => $value) {
             foreach ($value as $k => $v) {
                 $resolver = (
-                    isset($childFields[$k]) 
-                    AND isset($childFields[$k][static::KEY_SUBMIT_VALUE]) 
+                    isset($childFields[$k])
+                    AND isset($childFields[$k][static::KEY_SUBMIT_VALUE])
                     AND $childFields[$k][static::KEY_SUBMIT_VALUE] instanceof Closure
                 )? $childFields[$k][static::KEY_SUBMIT_VALUE] : null;
 
@@ -444,13 +444,13 @@ class FormModel
         foreach ($fields as $key => $field) {
             $file = $request->file($key);
             if (!$file) continue;
-           
+
             // Delete old file
             $shouldDeleteOldFile = isset($field['delete_old_file']) AND true === $field['delete_old_file'];
             if ($this->isUpdate() AND $shouldDeleteOldFile) {
                 $this->deleteUploadedFile($this->getModel(), $field);
             }
-            
+
             // Upload file
             $filepath = $this->saveUploadedFile($file, $field);
             $this->setSubmitValue($key, $filepath);
@@ -587,7 +587,7 @@ class FormModel
                 if ($child->exists AND $shouldDeleteOldFile) {
                     $this->deleteUploadedFile($child, $field);
                 }
-                
+
                 // Upload file
                 $filepath = $this->saveUploadedFile($file, $field);
                 $value[$key] = $filepath;
@@ -635,35 +635,47 @@ class FormModel
 
     protected function validateAndResolveFields(array $fields, $keyPrefix = null)
     {
-        $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
         foreach ($fields as $key => $field) {
-            $fields[$key]['name'] = $key;
-            $rules = isset($field[$rulesKey]) ? $field[$rulesKey] 
-                : (isset($field['rules']) ? $field['rules'] : []);
+            $fields[$key] = $this->validateAndResolveField($key, $field, $keyPrefix);
+        }
+        return $fields;
+    }
 
-            $rules = $this->resolveRules($rules);
-            $this->mergeRules($keyPrefix.$key, $rules);
-            $fields[$key]['rules'] = $rules;
-            if (in_array('required', $rules)) {
-                $fields[$key]['required'] = true;
+    protected function validateAndResolveField($key, array $field, $keyPrefix = null)
+    {
+        $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
+
+        $field['name'] = $key;
+        $rules = isset($field[$rulesKey]) ? $field[$rulesKey]
+            : (isset($field['rules']) ? $field['rules'] : []);
+
+        $rules = $this->resolveRules($rules);
+        $this->mergeRules($keyPrefix.$key, $rules);
+        $field['rules'] = $rules;
+        if (in_array('required', $rules)) {
+            $field['required'] = true;
+        }
+
+        if ($this->isUploadableField($field)) {
+            if (!isset($field['upload_disk'])) {
+                throw new UnexpectedValueException("Harap masukkan 'upload_disk' pada field '{$key}'.");
             }
-
-            if ($this->isUploadableField($field)) {
-                if (!isset($field['upload_disk'])) {
-                    throw new UnexpectedValueException("Harap masukkan 'upload_disk' pada field '{$key}'.");
-                }
-                if (!isset($field['upload_path'])) {
-                    throw new UnexpectedValueException("Harap masukkan 'upload_path' pada field '{$key}'.");
-                }
-                if (!isset($field['upload_filename'])) {
-                    $fields[$key]['upload_filename'] = function ($file) {
-                        return uniqid().'.'.$file->extension();
-                    };
-                }
+            if (!isset($field['upload_path'])) {
+                throw new UnexpectedValueException("Harap masukkan 'upload_path' pada field '{$key}'.");
+            }
+            if (!isset($field['upload_filename'])) {
+                $field['upload_filename'] = function ($file) {
+                    return uniqid().'.'.$file->extension();
+                };
             }
         }
 
-        return $fields;
+        $keyActionParams = $this->isCreate() ? 'if_create' : 'if_update';
+        if (isset($field[$keyActionParams]) AND is_array($field[$keyActionParams])) {
+            $field = array_merge($field, $field[$keyActionParams]);
+        }
+
+        return $field;
     }
 
     protected function mergeRules($key, $rules)
@@ -689,7 +701,7 @@ class FormModel
     }
 
     protected function rollback()
-    {   
+    {
         // Delete uploaded files
         foreach ($this->uploadedFiles as $uploadedFile) {
             $filepath = $uploadedFile['filepath'];
