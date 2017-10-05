@@ -16,18 +16,15 @@
   @endforeach
 
   @foreach($form->getChilds() as $key => $formChild)
-    @component('form-model::bs3.form-child', [
+    @component('form-model::bs3.form-child', array_merge($formChild, [
       'name' => $key,
-      'label' => $formChild['label'],
-      'fields' => $formChild['fields'],
       'table' => array_values(array_map(function($field) {
         return [
           'key' => $field['name'],
           'label' => $field['label']
         ];
-      }, $formChild['fields'])),
-      'rows' => $formChild['items'],
-    ])
+      }, $formChild['fields']))
+    ]))
       @foreach($formChild['fields'] as $field)
         @include($form->getInputView($field['input'], 'form-model::bs3.fields.'.$field['input']), array_merge($field, [
           'value' => $form->getRenderValue($key)

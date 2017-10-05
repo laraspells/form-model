@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use UnexpectedValueException;
+use InvalidArgumentException;
 
 class FormModel
 {
@@ -103,14 +104,19 @@ class FormModel
         return $this;
     }
 
-    public function withMany($relationKey, $label, array $fields)
+    public function withMany($relationKey, $data, array $fields)
     {
+        if (is_string($data)) {
+            $data = ['label' => $data];
+        } elseif(!is_array($data)) {
+            throw new InvalidArgumentException("Second argument 'withMany' method only accept string or array.");
+        }
+
         $this->validateRelationKey($relationKey);
-        $this->childs[$relationKey] = [
-            'label' => $label,
+        $this->childs[$relationKey] = array_merge($data, [
             'fields' => $this->validateAndResolveFields($fields),
-            'items' => $this->isCreate() ? [] : $this->getModel()->{$relationKey}()->get()
-        ];
+            'rows' => $this->isCreate() ? [] : $this->getModel()->{$relationKey}()->get()
+        ]);
         return $this;
     }
 
