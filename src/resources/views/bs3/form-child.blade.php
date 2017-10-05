@@ -4,21 +4,24 @@ $id = "form-child-{$name}";
 $label = isset($label)? $label : ucwords(snake_case(camel_case($name), ' '));
 $required = isset($required)? (bool) $required : false;
 $rows = isset($rows) ? $rows : [];
+$emptyMessage = "$name empty";
 @endphp
 
 @component('form-model::bs3.fields.wrapper', [
-  'name' => $name, 
+  'name' => $name,
   'label' => $label,
   'required' => $required
 ])
-  <div class="form-child" id="{{ $id }}" 
-    data-modal="#modal-{{ $id }}" 
+  <div class="form-child" id="{{ $id }}"
+    data-modal="#modal-{{ $id }}"
     data-columns='{{ json_encode($table) }}'
     data-name-prefix='{{ $name }}'>
     <button style="margin-bottom:15px" class="btn btn-success btn-sm btn-add">
       <i class="fa fa-plus"></i> Tambah
     </button>
-    
+    <div class="well empty-message hidden">
+      {{ $emptyMessage }}
+    </div>
     <table class="table table-bordered table-hover table-striped">
       <thead>
         <tr>
@@ -37,12 +40,12 @@ $rows = isset($rows) ? $rows : [];
           </td>
           @endforeach
           <td>
-            <input type="hidden" 
-              name="{{ $name }}[{{$i}}][{{ $row->getKeyName() }}]" 
-              value="{{ $row->getKey() }}" 
+            <input type="hidden"
+              name="{{ $name }}[{{$i}}][{{ $row->getKeyName() }}]"
+              value="{{ $row->getKey() }}"
               data-key="{{ $row->getKeyName() }}"
               key="{{ $row->getKeyName() }}"/>
-              
+
             <a class='btn btn-primary btn-edit'>Edit</a>
             <a class='btn btn-danger btn-delete'>Delete</a>
           </td>
@@ -84,6 +87,7 @@ $rows = isset($rows) ? $rows : [];
       // Prepare vars
       var $form = $(this)
       var $table = $form.find('table.table')
+      var $emptyMessage = $form.find(".empty-message")
       var $btnAdd = $form.find('.btn-add')
       var $modal = $($form.data('modal') + '.modal')
       var $modalForm = $modal.find('.modal-form')
@@ -116,15 +120,36 @@ $rows = isset($rows) ? $rows : [];
       });
 
       $form.on('table.updated', function() {
+        updateTable();
+      });
+
+      $form.on('table.ready', function() {
+        updateTable();
+      });
+
+      $form.trigger('table.ready');
+
+      function updateTable() {
+        // Hide table if empty
+        var $rows = $table.find("tbody > tr");
+        var isEmpty = $rows.length === 0;
+        if (isEmpty) {
+          $emptyMessage.removeClass('hidden');
+          $table.addClass('hidden');
+        } else {
+          $emptyMessage.addClass('hidden');
+          $table.removeClass('hidden');
+        }
+
         // correcting input names
-        $table.find("tbody > tr").each(function(i) {
+        $rows.each(function(i) {
           var $inputs = $(this).find("select, input, textarea");
           $inputs.each(function() {
             var key = $(this).data('key');
             $(this).attr('name', namePrefix+'['+i+']['+key+']');
           });
         });
-      });
+      }
 
       function showFormModal($tr) {
         $modalInputs.val('');
@@ -164,8 +189,8 @@ $rows = isset($rows) ? $rows : [];
             var $input = $modal.find('[name="'+col.key+'"]');
             var $cloneInput = $input.clone();
             var $td = $("<td></td>");
-            var value = values[col.key]; 
-            
+            var value = values[col.key];
+
             $cloneInput.addClass('hidden');
             $cloneInput.data('key', col.key);
             $cloneInput.attr('key', col.key);
