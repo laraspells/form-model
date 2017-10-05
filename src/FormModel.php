@@ -337,7 +337,7 @@ class FormModel
     public function getRenderValue($key)
     {
         $field = $this->getField($key);
-        $value = ($field AND isset($field['default'])) ? $field['default'] : null;
+        $value = ($field AND isset($field['default_value'])) ? $field['default_value'] : null;
         if ($this->isUpdate()) {
             $value = $this->getModel()->{$key};
             if ($field AND isset($field[static::KEY_RENDER_VALUE]) AND $field[static::KEY_RENDER_VALUE] instanceof Closure) {
