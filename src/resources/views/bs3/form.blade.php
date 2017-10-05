@@ -29,7 +29,7 @@
       'rows' => $formChild['items'],
     ])
       @foreach($formChild['fields'] as $field)
-        @include('form-model::bs3.fields.'.$field['input'], array_merge($field, [
+        @include($form->getInputView($field['input'], 'form-model::bs3.fields.'.$field['input']), array_merge($field, [
           'value' => $form->getRenderValue($key)
         ]))
       @endforeach
