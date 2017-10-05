@@ -457,7 +457,6 @@ class FormModel
     {
         $request = $this->getRequest();
         $rules = $this->getRules();
-        dd($rules);
         $request->validate($rules);
     }
 
