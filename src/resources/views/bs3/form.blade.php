@@ -9,7 +9,7 @@
 
   {!! csrf_field() !!}
 
-  @foreach($form->getFields() as $key => $field)
+  @foreach($form->getExistsFields() as $key => $field)
     @include($form->getInputView($field['input'], 'form-model::bs3.fields.'.$field['input']), array_merge($field, [
       'value' => $form->getRenderValue($key)
     ]))

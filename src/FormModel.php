@@ -212,6 +212,13 @@ class FormModel
         return $this->fields;
     }
 
+    public function getExistsFields()
+    {
+        return array_filter($this->getFields(), function($field) {
+            return $field['exists'];
+        });
+    }
+
     public function getField($key)
     {
         return array_get($this->fields, $key);
@@ -323,7 +330,7 @@ class FormModel
     public function getInputableFields()
     {
         return array_filter($this->getInputableFields(), function($field) {
-            return isset($field['input']);
+            return (isset($field['input']) AND false !== $field['exists']);
         });
     }
 
@@ -644,6 +651,11 @@ class FormModel
     protected function validateAndResolveField($key, array $field, $keyPrefix = null)
     {
         $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
+
+        $field = array_merge([
+            'exists' => true,
+            'disabled' => false,
+        ], $field);
 
         $field['name'] = $key;
         $rules = isset($field[$rulesKey]) ? $field[$rulesKey]
