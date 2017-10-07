@@ -4,7 +4,7 @@ $id = "form-child-{$name}";
 $label = isset($label)? $label : ucwords(snake_case(camel_case($name), ' '));
 $required = isset($required)? (bool) $required : false;
 $rows = isset($rows) ? $rows : [];
-$emptyMessage = "$name empty";
+$emptyMessage = "$label empty";
 @endphp
 
 @component('form-model::bs3.fields.wrapper', [
@@ -61,7 +61,7 @@ $emptyMessage = "$name empty";
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h4 class="modal-title">Form {{ ucwords($name) }}</h4>
+          <h4 class="modal-title">Form {{ $label }}</h4>
         </div>
         <form class="modal-form">
           <div class="modal-body form-horizontal">
