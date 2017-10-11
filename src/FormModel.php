@@ -382,7 +382,7 @@ class FormModel
             }
         }
 
-        return session($key) ?: old($key) ?: $value;
+        return session($key) ?: old($key) ?: (is_object($value) ? '' : $value);
     }
 
     public function getSubmitValues()
