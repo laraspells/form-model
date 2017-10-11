@@ -194,6 +194,7 @@ $emptyMessage = "$label empty";
             $cloneInput.addClass('hidden');
             $cloneInput.data('key', col.key);
             $cloneInput.attr('key', col.key);
+            $cloneInput.val(value)
 
             $td.append("<span>"+value+"</span>");
             $td.append($cloneInput)
