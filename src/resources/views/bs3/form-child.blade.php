@@ -37,6 +37,7 @@ $emptyMessage = "$label empty";
           @foreach($fields as $key => $field)
           <td>
             {{ $row->{$key} }}
+            <input type="hidden" data-key="{{ $key }}" name="{{ $name }}[{{$i}}][{{ $key }}]" value="{{ $row->{$key} }}"/>
           </td>
           @endforeach
           <td>
