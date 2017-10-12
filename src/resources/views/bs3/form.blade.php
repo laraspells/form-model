@@ -41,3 +41,7 @@
     @endif
   @endcomponent
 </form>
+
+@foreach($form->getScripts() as $script)
+@js($script)
+@endforeach
