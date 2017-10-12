@@ -5,13 +5,14 @@ namespace LaraSpells\FormModel;
 use Closure;
 use DB;
 use Exception;
-use Storage;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use UnexpectedValueException;
 use InvalidArgumentException;
+use Storage;
+use UnexpectedValueException;
 
 class FormModel
 {
@@ -35,12 +36,12 @@ class FormModel
     protected $styles = [];
     protected $inputViews = [];
 
-    protected $childs = [];
+    protected $relations = [];
 
     protected $formDataResolver;
     protected $requestDataResolver;
     protected $beforeSave;
-    protected $beforeSaveChild;
+    protected $beforeSaveRelation;
 
 
     protected $uploadedFiles = [];
@@ -113,10 +114,9 @@ class FormModel
         }
 
         $this->validateRelationKey($relationKey);
-        $this->childs[$relationKey] = array_merge($data, [
-            'fields' => $this->validateAndResolveFields($fields),
-            'rows' => $this->isCreate() ? [] : $this->getModel()->{$relationKey}()->get()
-        ]);
+        $relationField = array_merge(['exists' => true], $data, ['fields' => $fields]);
+
+        $this->fields[$relationKey] = $this->validateAndResolveRelationField($relationKey, $relationField);
         return $this;
     }
 
@@ -223,6 +223,17 @@ class FormModel
         });
     }
 
+    public function getExistsSingleFields()
+    {
+        $fields = [];
+        foreach($this->fields as $key => $field) {
+            if ($field['exists'] AND !$this->isFieldRelation($key, $field)) {
+                $fields[$key] = $field;
+            }
+        }
+        return $fields;
+    }
+
     public function getField($key)
     {
         return array_get($this->fields, $key);
@@ -243,25 +254,26 @@ class FormModel
         $rules = $this->isCreate() ? $this->getRulesCreate() : $this->getRulesUpdate();
 
         // Merge with (exists) fields rules
-        foreach ($this->getExistsFields() as $key => $field) {
-            $rules[$key] = isset($rules[$key]) ?
-                array_unique(array_merge($this->resolveRules($rules[$key]), $field['rules']))
-                : $field['rules'];
-        }
+        foreach ($this->fields as $key => $field) {
+            if (!$field['exists']) continue;
 
-        // Merge with (exists) child forms rules
-        foreach ($this->getChilds() as $relationKey => $child) {
-            foreach ($child['fields'] as $key => $field) {
-                $ruleKey = "{$relationKey}.*.{$key}";
-
-                if (!$field['exists']) {
-                    if (isset($rules[$ruleKey])) unset($rules[$ruleKey]);
-                    continue;
-                }
-
-                $rules[$ruleKey] = isset($rules[$ruleKey]) ?
-                    array_unique(array_merge($this->resolveRules($rules[$ruleKey]), $field['rules']))
+            if (!$this->isFieldRelation($key, $field)) {
+                $rules[$key] = isset($rules[$key]) ?
+                    array_unique(array_merge($this->resolveRules($rules[$key]), $field['rules']))
                     : $field['rules'];
+            } else {
+                $relation = $this->getModel()->{$key}();
+                foreach ($field['fields'] as $childKey => $childField) {
+                    $ruleKey = ($relation instanceof HasMany) ? "{$key}.*.{$childKey}" : "{$key}.{$childKey}";
+                    if (!$childField['exists']) {
+                        if (isset($rules[$ruleKey])) unset($rules[$ruleKey]);
+                        continue;
+                    }
+
+                    $rules[$ruleKey] = isset($rules[$ruleKey]) ?
+                        array_unique(array_merge($this->resolveRules($rules[$ruleKey]), $childField['rules']))
+                        : $childField['rules'];
+                }
             }
         }
 
@@ -270,14 +282,20 @@ class FormModel
         });
     }
 
-    public function getChilds()
+    public function getRelationFields()
     {
-        return $this->childs;
+        $fields = [];
+        foreach($this->fields as $key => $field) {
+            if ($this->isFieldRelation($key, $field)) {
+                $fields[$key] = $field;
+            }
+        }
+        return $fields;
     }
 
-    public function getFormChild($relationKey)
+    public function getFieldRelation($relationKey)
     {
-        return isset($this->childs[$relationKey]) ? $this->childs[$relationKey] : null;
+        return isset($this->fields[$relationKey]) ? $this->fields[$relationKey] : null;
     }
 
     public function getView()
@@ -330,9 +348,9 @@ class FormModel
         return $this->beforeSave;
     }
 
-    public function getBeforeSaveChild($key)
+    public function getBeforeSaveRelation($key)
     {
-        return isset($this->beforeSaveChild[$key]) ? $this->beforeSaveChild[$key] : null;
+        return isset($this->beforeSaveRelation[$key]) ? $this->beforeSaveRelation[$key] : null;
     }
 
     public function beforeSave(Closure $callback)
@@ -348,13 +366,13 @@ class FormModel
         });
     }
 
-    public function hasUploadableField($includeChilds = true)
+    public function hasUploadableField($includeRelations = true)
     {
         if (count($this->getUploadableFields())) {
             return true;
         }
-        foreach ($this->getChilds() as $child) {
-            foreach ($child['fields'] as $field) {
+        foreach ($this->getRelationFields() as $relation) {
+            foreach ($relation['fields'] as $field) {
                 if ($this->isUploadableField($field)) {
                     return true;
                 }
@@ -382,7 +400,13 @@ class FormModel
             }
         }
 
-        return session($key) ?: old($key) ?: (is_object($value) ? '' : $value);
+        if ($this->hasFieldRelation($key)) {
+            $value = (is_object($value) ? '' : $value);
+        } else {
+            $value = session($key) ?: old($key) ?: (is_object($value) ? '' : $value);
+        }
+
+        return $value;
     }
 
     public function getSubmitValues()
@@ -400,10 +424,8 @@ class FormModel
         return array_get($this->submitValues, $key);
     }
 
-    public function getChildSubmitValues($relationKey)
+    public function getFieldHasManyValues($relationKey)
     {
-        $this->checkHasChild($relationKey);
-
         $request = $this->getRequest();
         $values = $request->get($relationKey);
         if (!is_array($values)) {
@@ -411,15 +433,15 @@ class FormModel
         }
 
         // resolve values
-        $formChild = $this->getFormChild($relationKey);
-        $childFields = $formChild['fields'];
+        $formRelation = $this->getFieldRelation($relationKey);
+        $relationFields = $formRelation['fields'];
         foreach ($values as $i => $value) {
             foreach ($value as $k => $v) {
                 $resolver = (
-                    isset($childFields[$k])
-                    AND isset($childFields[$k][static::KEY_SUBMIT_VALUE])
-                    AND $childFields[$k][static::KEY_SUBMIT_VALUE] instanceof Closure
-                )? $childFields[$k][static::KEY_SUBMIT_VALUE] : null;
+                    isset($relationFields[$k])
+                    AND isset($relationFields[$k][static::KEY_SUBMIT_VALUE])
+                    AND $relationFields[$k][static::KEY_SUBMIT_VALUE] instanceof Closure
+                )? $relationFields[$k][static::KEY_SUBMIT_VALUE] : null;
 
                 if ($resolver) {
                     $resolver = $resolver->bindTo($this);
@@ -430,10 +452,16 @@ class FormModel
         return $values;
     }
 
-    public function beforeSaveChild($relationKey, Closure $callback)
+    public function getFieldHasOneValues($relationKey)
     {
-        $this->checkHasChild($relationKey);
-        $this->beforeSaveChild[$relationKey] = $callback;
+        $request = $this->getRequest();
+        return $request->get($relationKey);
+    }
+
+    public function beforeSaveRelation($relationKey, Closure $callback)
+    {
+        $this->checkHasFieldRelation($relationKey);
+        $this->beforeSaveRelation[$relationKey] = $callback;
         return $this;
     }
 
@@ -445,7 +473,7 @@ class FormModel
         $this->fillModelValues();
         $this->runBeforeSave();
         $saved = $this->saveModel();
-        $this->processChilds();
+        $this->processRelations();
     }
 
     protected function processUpdate()
@@ -456,7 +484,7 @@ class FormModel
         $this->fillModelValues();
         $this->runBeforeSave();
         $saved = $this->saveModel();
-        $this->processChilds();
+        $this->processRelations();
     }
 
     protected function validateForm()
@@ -559,12 +587,12 @@ class FormModel
         }
     }
 
-    protected function runBeforeSaveChild($relationKey, Model $child)
+    protected function runBeforeSaveRelation($relationKey, Model $relation)
     {
-        $callback = $this->getBeforeSaveChild($relationKey);
+        $callback = $this->getBeforeSaveRelation($relationKey);
         if ($callback) {
             $callback = $callback->bindTo($this);
-            $callback($child);
+            $callback($relation);
         }
     }
 
@@ -573,41 +601,45 @@ class FormModel
         return $this->getModel()->save();
     }
 
-    protected function processChilds()
+    protected function processRelations()
     {
-        foreach ($this->getChilds() as $key => $child) {
-            $this->processChild($key);
+        foreach ($this->getRelationFields() as $key => $field) {
+            $relation = $this->getModel()->{$key}();
+            if ($relation instanceof HasMany) {
+                $this->processHasMany($relation, $key, $field);
+            } else {
+                $this->processHasOne($relation, $key, $field);
+            }
         }
     }
 
-    protected function processChild($relationKey)
+    protected function processHasMany($relation, $relationKey)
     {
         $request = $this->getRequest();
-        $childForm = $this->childs[$relationKey];
-        $uploadableFields = array_filter($childForm['fields'], function($field) {
+        $relationForm = $this->fields[$relationKey];
+        $uploadableFields = array_filter($relationForm['fields'], function($field) {
             return $this->isUploadableField($field);
         });
 
-        $relation = $this->getModel()->{$relationKey}();
-        $childModel = $relation->getRelated();
-        $childClass = get_class($childModel);
-        $childPk = $childModel->getKeyName();
-        $childValues = $this->getChildSubmitValues($relationKey);
-        $valueIds = array_map(function($value) use ($childPk) {
-            return $value[$childPk];
-        }, array_filter($childValues, function($value) use ($childPk) {
-            return isset($value[$childPk]);
+        $relationModel = $relation->getRelated();
+        $relationClass = get_class($relationModel);
+        $relationPk = $relationModel->getKeyName();
+        $relationValues = $this->getFieldHasManyValues($relationKey);
+        $valueIds = array_map(function($value) use ($relationPk) {
+            return $value[$relationPk];
+        }, array_filter($relationValues, function($value) use ($relationPk) {
+            return isset($value[$relationPk]);
         }));
         if ($this->isUpdate() AND !empty($valueIds)) {
-            $queryShouldDeletes = $relation->whereNotIn($childPk, $valueIds);
+            $queryShouldDeletes = $relation->whereNotIn($relationPk, $valueIds);
             if (count($uploadableFields)) {
                 // Delete upload files
-                $childs = $queryShouldDeletes->get();
-                foreach ($childs as $child) {
+                $relations = $queryShouldDeletes->get();
+                foreach ($relations as $relation) {
                     foreach ($uploadableFields as $field) {
                         $shouldDeleteOldFile = isset($field['delete_old_file']) AND true === $field['delete_old_file'];
                         if ($shouldDeleteOldFile) {
-                            $this->deleteUploadedFile($child, $field);
+                            $this->deleteUploadedFile($relation, $field);
                         }
                     }
                 }
@@ -617,8 +649,8 @@ class FormModel
         }
 
 
-        foreach ($childValues as $i => $value) {
-            $child = isset($value[$childPk]) ? $childModel->find($value[$childPk]) : new $childClass;
+        foreach ($relationValues as $i => $value) {
+            $relation = isset($value[$relationPk]) ? $relationModel->find($value[$relationPk]) : new $relationClass;
 
             // process uploads
             foreach ($uploadableFields as $key => $field) {
@@ -627,8 +659,8 @@ class FormModel
 
                 // Delete old file
                 $shouldDeleteOldFile = isset($field['delete_old_file']) AND true === $field['delete_old_file'];
-                if ($child->exists AND $shouldDeleteOldFile) {
-                    $this->deleteUploadedFile($child, $field);
+                if ($relation->exists AND $shouldDeleteOldFile) {
+                    $this->deleteUploadedFile($relation, $field);
                 }
 
                 // Upload file
@@ -636,20 +668,25 @@ class FormModel
                 $value[$key] = $filepath;
             }
 
-            $child->fill($value);
-            $this->runBeforeSaveChild($relationKey, $child);
-            if ($child->exists) {
-                $child->save();
+            $relation->fill($value);
+            $this->runBeforeSaveRelation($relationKey, $relation);
+            if ($relation->exists) {
+                $relation->save();
             } else {
-                $this->getModel()->{$relationKey}()->save($child);
+                $this->getModel()->{$relationKey}()->save($relation);
             }
         }
     }
 
-    protected function checkHasChild($relationKey)
+    protected function hasFieldRelation($relationKey)
     {
-        if (!isset($this->childs[$relationKey])) {
-            throw new Exception("Form ini tidak memiliki child form '{$relationKey}'.");
+        return (isset($this->fields[$relationKey]) AND $this->isFieldRelation($relationKey, $this->fields[$relationKey]));
+    }
+
+    protected function checkHasFieldRelation($relationKey)
+    {
+        if (!$this->hasFieldRelation($relationKey)) {
+            throw new Exception("This form doesn't have form relation '{$relationKey}'.");
         }
     }
 
@@ -657,12 +694,12 @@ class FormModel
     {
         $modelClass = get_class($this->model);
         if (!method_exists($this->model, $relationKey)) {
-            throw new UnexpectedValueException("Method '{$relationKey}' tidak terdaftar pada model '{$modelClass}'.");
+            throw new UnexpectedValueException("Method '{$relationKey}' doesn't exists at model '{$modelClass}'.");
         }
 
         $relation = $this->model->{$relationKey}();
-        if (false === $relation instanceof HasMany) {
-            throw new UnexpectedValueException("Relasi '{$relationKey}' pada '{$modelClass}' tidak bersifat hasMany.");
+        if (false === $relation instanceof Relation) {
+            throw new UnexpectedValueException("Method '{$relationKey}' should return instance of '".(Relation::class)."'.");
         }
     }
 
@@ -687,13 +724,21 @@ class FormModel
     protected function validateAndResolveField($key, array $field)
     {
         $field['name'] = $key;
-
         $field = array_merge([
             'exists' => true,
             'disabled' => false,
             'rules' => []
         ], $field);
 
+        if ($this->isFieldRelation($key, $field)) {
+            return $this->validateAndResolveRelationField($key, $field);
+        } else {
+            return $this->validateAndResolveSingleField($key, $field);
+        }
+    }
+
+    protected function validateAndResolveSingleField($key, array $field)
+    {
         $rulesKey = $this->isCreate() ? 'rules_create' : 'rules_update';
         $rules = isset($field[$rulesKey]) ? $field[$rulesKey]
             : (isset($field['rules']) ? $field['rules'] : []);
@@ -706,10 +751,10 @@ class FormModel
 
         if ($this->isUploadableField($field)) {
             if (!isset($field['upload_disk'])) {
-                throw new UnexpectedValueException("Harap masukkan 'upload_disk' pada field '{$key}'.");
+                throw new UnexpectedValueException("Field '{$key}' must have 'upload_disk'.");
             }
             if (!isset($field['upload_path'])) {
-                throw new UnexpectedValueException("Harap masukkan 'upload_path' pada field '{$key}'.");
+                throw new UnexpectedValueException("Field '{$key}' must have 'upload_path'.");
             }
             if (!isset($field['upload_filename'])) {
                 $field['upload_filename'] = function ($file) {
@@ -726,9 +771,61 @@ class FormModel
         return $field;
     }
 
-    protected function isUploadableField($field)
+    protected function validateAndResolveRelationField($relationKey, array $field)
+    {
+        $relation = $this->getModel()->{$relationKey}();
+        $relatedModel = $relation->getRelated();
+        $isHasMany = ($relation instanceof HasMany);
+
+        $field['save_as'] = $relationKey;
+
+        foreach ($field['fields'] as $key => $childField) {
+            if ($this->isFieldRelation($key, $childField, $relatedModel)) {
+                throw new UnexpectedValueException("Relation field must not have their own relation field.");
+            }
+            $field['fields'][$key] = $this->validateAndResolveField($key, $childField);
+            if (!$isHasMany) {
+                $field['fields'][$key]['name'] = "{$relationKey}[{$key}]";
+            }
+        }
+
+        if ($this->isUpdate()) {
+            if ($isHasMany) {
+                $field['rows'] = $this->getRelationHasManyValues($relationKey);
+            }
+        }
+
+        return $field;
+    }
+
+    protected function getRelationHasManyValues($key)
+    {
+        return $this->getModel()->{$key}()->get();
+    }
+
+    public function isUploadableField($field)
     {
         return (isset($field['input']) AND in_array($field['input'], ['image', 'file']));
+    }
+
+    public function isFieldRelation($key, $field, $model = null)
+    {
+        if (!$this->modelHasRelation($key, $model)) {
+            return false;
+        }
+
+        return (isset($field['fields']) && is_array($field['fields']));
+    }
+
+    protected function modelHasRelation($key, $model = null)
+    {
+        $model = $model ?: $this->getModel();
+        if (!method_exists($model, $key)) {
+            return false;
+        }
+
+        $result = $model->{$key}();
+        return ($result instanceof Relation);
     }
 
     protected function resolveRules($rules)

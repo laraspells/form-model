@@ -22,7 +22,7 @@ $emptyMessage = "$label empty";
     <div class="well empty-message hidden">
       {{ $emptyMessage }}
     </div>
-    <table class="table table-bordered table-hover table-striped">
+    <table class="table table-bordered table-hover table-striped" style="margin-bottom:0px;">
       <thead>
         <tr>
           @foreach($table as $i => $col)
@@ -188,6 +188,7 @@ $emptyMessage = "$label empty";
           var cols = columns.slice(0)
           cols.reverse().forEach(function(col) {
             var $input = $modal.find('[name="'+col.key+'"]');
+            var inputType = $input.attr('type');
             var $cloneInput = $input.clone();
             var $td = $("<td></td>");
             var value = values[col.key];
@@ -195,7 +196,9 @@ $emptyMessage = "$label empty";
             $cloneInput.addClass('hidden');
             $cloneInput.data('key', col.key);
             $cloneInput.attr('key', col.key);
-            $cloneInput.val(value)
+            if (inputType != 'file') {
+              $cloneInput.val(value);
+            }
 
             $td.append("<span>"+value+"</span>");
             $td.append($cloneInput)
