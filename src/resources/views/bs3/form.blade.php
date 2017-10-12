@@ -11,7 +11,7 @@
 
   @foreach($form->getExistsFields() as $key => $field)
     @if($form->isFieldRelation($key, $field))
-      @component('form-model::bs3.form-child', array_merge($field, [
+      @component(isset($field['view_form']) ? $field['view_form'] : 'form-model::bs3.form-child', array_merge($field, [
         'name' => $key,
         'table' => array_values(array_map(function($field) {
           return [
