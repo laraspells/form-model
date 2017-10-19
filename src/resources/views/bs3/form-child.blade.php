@@ -84,6 +84,67 @@ $emptyMessage = "$label empty";
   $.fn.formChild = function (options) {
     var $forms = this;
 
+    function addOrUpdateRow($form, $tr, values) {
+      $tr = $($tr)
+      $tr.find("> td").not(":last-child").remove();
+
+      var $modal = $($form.data('modal') + '.modal')
+      var isNew = $tr.find('td').length === 0;
+      var $table = $form.find('table.table')
+      var columns = $form.data('columns')
+
+      console.log({$form, $tr, $table, columns, values})
+
+      var cols = columns.slice(0)
+
+      cols.reverse().forEach(function(col) {
+        var $input = $modal.find('[name="'+col.key+'"]');
+        var inputType = $input.attr('type');
+        var $cloneInput = $input.clone();
+        var $td = $("<td></td>");
+        var value = values[col.key];
+
+        $cloneInput.addClass('hidden');
+        $cloneInput.data('key', col.key);
+        $cloneInput.attr('key', col.key);
+        if (inputType != 'file') {
+          $cloneInput.val(value);
+        }
+
+        $td.append("<span>"+value+"</span>");
+        $td.append($cloneInput)
+        $tr.prepend($td);
+      });
+
+      if (isNew) {
+        $tdAction = $("<td></td>");
+        $tdAction.append("<a class='btn btn-primary btn-edit'>Edit</a>");
+        $tdAction.append("&nbsp;")
+        $tdAction.append("<a class='btn btn-danger btn-delete'>Delete</a>");
+        $tr.append($tdAction);
+      }
+
+      $tr.data('values', values);
+      if (isNew) {
+        $table.find("tbody").append($tr);
+        $form.trigger('row.added', [values, $tr]);
+      } else {
+        $form.trigger('row.updated', [values, $tr]);
+      }
+      $form.trigger('table.updated');
+    }
+
+    if (typeof options === 'string') {
+      var cmd = options
+      if (cmd === 'addOrUpdateRow') {
+        var $tr = arguments[1];
+        var values = arguments[2];
+        return $forms.each(function() {
+          addOrUpdateRow($(this), $tr, values);
+        });
+      }
+    }
+
     return $forms.each(function() {
       // Prepare vars
       var $form = $(this)
@@ -177,49 +238,13 @@ $emptyMessage = "$label empty";
 
         $modalForm.one('submit', function(e) {
           e.preventDefault();
-          $tr.find("> td").not(":last-child").remove();
           var values = {};
           $modalInputs.each(function() {
             var value = $(this).val();
             var name = $(this).attr('name');
             values[name] = value;
           });
-
-          var cols = columns.slice(0)
-          cols.reverse().forEach(function(col) {
-            var $input = $modal.find('[name="'+col.key+'"]');
-            var inputType = $input.attr('type');
-            var $cloneInput = $input.clone();
-            var $td = $("<td></td>");
-            var value = values[col.key];
-
-            $cloneInput.addClass('hidden');
-            $cloneInput.data('key', col.key);
-            $cloneInput.attr('key', col.key);
-            if (inputType != 'file') {
-              $cloneInput.val(value);
-            }
-
-            $td.append("<span>"+value+"</span>");
-            $td.append($cloneInput)
-            $tr.prepend($td);
-          });
-          if (isNew) {
-            $tdAction = $("<td></td>");
-            $tdAction.append("<a class='btn btn-primary btn-edit'>Edit</a>");
-            $tdAction.append("&nbsp;")
-            $tdAction.append("<a class='btn btn-danger btn-delete'>Delete</a>");
-            $tr.append($tdAction);
-          }
-
-          $tr.data('values', values);
-          if (isNew) {
-            $table.find("tbody").append($tr);
-            $form.trigger('row.added', [values, $tr]);
-          } else {
-            $form.trigger('row.updated', [values, $tr]);
-          }
-          $form.trigger('table.updated');
+          $form.formChild('addOrUpdateRow', $tr, values)
           $modal.modal('hide');
         });
       }
