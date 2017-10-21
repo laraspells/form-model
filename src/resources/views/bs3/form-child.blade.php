@@ -36,7 +36,7 @@ $emptyMessage = "$label empty";
         <tr data-values='{!! $row->toJson() !!}'>
           @foreach($fields as $key => $field)
           <td>
-            {{ $row->{$key} }}
+            <span>{{ $row->{$key} }}</span>
             <input type="hidden" data-key="{{ $key }}" name="{{ $name }}[{{$i}}][{{ $key }}]" value="{{ $row->{$key} }}"/>
           </td>
           @endforeach
